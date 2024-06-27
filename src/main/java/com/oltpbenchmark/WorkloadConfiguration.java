@@ -58,6 +58,11 @@ public class WorkloadConfiguration {
      */
     private boolean newConnectionPerTxn = false;
 
+    private String preferQueryMode = "";
+    private List<String> shardUrls;
+    private List<Integer> upperLimitsPerShard;
+    private boolean isPostfixNames = false;
+
     private boolean disableConnectionPooling = false;
 
     public String getBenchmarkName() {
@@ -333,6 +338,38 @@ public class WorkloadConfiguration {
         } else {
             return "TRANSACTION_SERIALIZABLE";
         }
+    }
+
+    public String getPreferQueryMode() {
+        return preferQueryMode;
+    }
+
+    public void setPreferQueryMode(String preferQueryMode) {
+        this.preferQueryMode = preferQueryMode;
+    }
+
+    public List<String> getShardUrls() {
+        return shardUrls;
+    }
+
+    public void setShardUrls(List<String> shardUrls) {
+        this.shardUrls = shardUrls;
+    }
+
+    public List<Integer> getUpperLimitsPerShard() {
+        return upperLimitsPerShard;
+    }
+
+    public void setUpperLimitsPerShard(List<Integer> upperLimitsPerShard) {
+        this.upperLimitsPerShard = upperLimitsPerShard;
+    }
+
+    public boolean isPostfixNames() {
+        return isPostfixNames;
+    }
+
+    public void setPostfixNames(boolean postfixNames) {
+        isPostfixNames = postfixNames;
     }
 
     @Override

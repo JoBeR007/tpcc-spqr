@@ -25,8 +25,6 @@ import com.oltpbenchmark.util.ClassUtil;
 import com.oltpbenchmark.util.SQLUtil;
 import com.oltpbenchmark.util.ScriptRunner;
 import com.oltpbenchmark.util.ThreadUtil;
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.Timer;
@@ -88,8 +86,6 @@ public abstract class BenchmarkModule {
             )
             .publishPercentiles();
 
-    private static HikariDataSource dataSource;
-
     /**
      * The workload configuration for this benchmark invocation
      */
@@ -119,26 +115,6 @@ public abstract class BenchmarkModule {
     public BenchmarkModule(WorkloadConfiguration workConf) {
         this.workConf = workConf;
         this.dialects = new StatementDialects(workConf);
-
-        if (!workConf.getDisableConnectionPool() && dataSource == null) {
-            try {
-                dataSource = new HikariDataSource();
-                dataSource.setJdbcUrl(workConf.getUrl());
-                dataSource.setUsername(workConf.getUsername());
-                dataSource.setPassword(workConf.getPassword());
-
-                dataSource.setMaximumPoolSize(workConf.getMaxConnections());
-
-                dataSource.setMetricRegistry(Metrics.globalRegistry);
-
-                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    dataSource.close();
-                }));
-            } catch (Exception e) {
-                LOG.error("Unable to initialize DataSource: %s", e.toString());
-                throw new RuntimeException("Unable to initialize DataSource", e);
-            }
-        }
         connectionSemaphore.release(workConf.getMaxConnections());
     }
 
@@ -150,16 +126,18 @@ public abstract class BenchmarkModule {
         long start = System.nanoTime();
         try {
             connectionSemaphore.acquire();
-            if (dataSource != null) {
-                return dataSource.getConnection();
-            }
             if (StringUtils.isEmpty(workConf.getUsername())) {
                 return DriverManager.getConnection(workConf.getUrl());
             } else {
-                return DriverManager.getConnection(
-                        workConf.getUrl(),
-                        workConf.getUsername(),
-                        workConf.getPassword());
+                Properties properties = new Properties();
+                properties.setProperty("user", workConf.getUsername());
+                properties.setProperty("password", workConf.getPassword());
+
+                if (workConf.getDatabaseType() == DatabaseType.SPQR
+                    || workConf.getDatabaseType() == DatabaseType.POSTGRES)
+                    properties.setProperty("preferQueryMode", workConf.getPreferQueryMode());
+
+                return DriverManager.getConnection(workConf.getUrl(), properties);
             }
         } catch (SQLException e) {
             connectionSemaphore.release();
@@ -171,6 +149,35 @@ public abstract class BenchmarkModule {
             long end = System.nanoTime();
             GET_SESSION_DURATION.register(Metrics.globalRegistry).record(Duration.ofNanos(end - start));
         }
+    }
+
+    public final List<Connection> makeShardConnections() throws SQLException {
+        List<Connection> res = new ArrayList<>();
+
+        for (int i = 0; i < workConf.getShardUrls().size(); i++) {
+            if (StringUtils.isEmpty(workConf.getUsername())) {
+                res.add(DriverManager.getConnection(workConf.getShardUrls().get(i)));
+            } else {
+                Properties properties = new Properties();
+                properties.setProperty("user", workConf.getUsername());
+                properties.setProperty("password", workConf.getPassword());
+                properties.setProperty("preferQueryMode", workConf.getPreferQueryMode());
+
+                res.add(DriverManager.getConnection(workConf.getShardUrls().get(i), properties));
+            }
+        }
+        return res;
+    }
+
+    public final Connection makeShardConnection(int shardId, boolean useSimpleProtocol)
+        throws SQLException {
+        Properties properties = new Properties();
+        properties.setProperty("user", workConf.getUsername());
+        properties.setProperty("password", workConf.getPassword());
+        if (useSimpleProtocol) {
+            properties.setProperty("preferQueryMode", workConf.getPreferQueryMode());
+        }
+        return DriverManager.getConnection(workConf.getShardUrls().get(shardId), properties);
     }
 
     public final void returnConnection() {
@@ -254,6 +261,11 @@ public abstract class BenchmarkModule {
             // HACK: Use MySQL if we're given MariaDB
             if (ddl_db_type == DatabaseType.MARIADB) ddl_db_type = DatabaseType.MYSQL;
             names.add("ddl-" + ddl_db_type.name().toLowerCase() + ".sql");
+            names.add(
+                "ddl-"
+                    + ddl_db_type.name().toLowerCase()
+                    + (workConf.isPostfixNames() ? "-orig" : "")
+                    + ".sql");
         }
         names.add("ddl-generic.sql");
 
@@ -299,8 +311,17 @@ public abstract class BenchmarkModule {
      * objects (e.g., table, indexes, etc) needed for this benchmark
      */
     public final void createDatabase() throws SQLException, IOException {
-        try (Connection conn = this.makeConnection()) {
-            this.createDatabase(this.workConf.getDatabaseType(), conn);
+        if (workConf.getDatabaseType() != DatabaseType.SPQR) {
+            try (Connection conn = this.makeConnection()) {
+                this.createDatabase(workConf.getDatabaseType(), conn);
+            }
+        } else {
+            int numShards = workConf.getShardUrls().size();
+            for (int shard = 0; shard < numShards; shard++) {
+                try (Connection conn = this.makeShardConnection(shard, true)) {
+                    this.createDatabase(workConf.getDatabaseType(), conn);
+                }
+            }
         }
     }
 

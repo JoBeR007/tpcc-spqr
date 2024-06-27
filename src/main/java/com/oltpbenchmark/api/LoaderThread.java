@@ -17,11 +17,15 @@
 
 package com.oltpbenchmark.api;
 
+import com.oltpbenchmark.types.DatabaseType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.List;
+
+import static com.oltpbenchmark.api.BenchmarkModule.workConf;
 
 /**
  * A LoaderThread is responsible for loading some portion of a
@@ -33,24 +37,48 @@ public abstract class LoaderThread implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(LoaderThread.class);
 
     private final BenchmarkModule benchmarkModule;
+    private int shardId;
 
     public LoaderThread(BenchmarkModule benchmarkModule) {
         this.benchmarkModule = benchmarkModule;
     }
 
+    public LoaderThread(BenchmarkModule benchmarkModule, int shardId) {
+        this.benchmarkModule = benchmarkModule;
+        this.shardId = shardId;
+    }
+
     @Override
     public final void run() {
         beforeLoad();
-        try (Connection conn = benchmarkModule.makeConnection()) {
-            load(conn);
-        } catch (SQLException ex) {
-            SQLException next_ex = ex.getNextException();
-            String msg = String.format("Unexpected error when loading %s database", benchmarkModule.getBenchmarkName().toUpperCase());
-            LOG.error(msg, next_ex);
-            throw new RuntimeException(ex);
-        } finally {
-            benchmarkModule.returnConnection();
-            afterLoad();
+        if (workConf.getDatabaseType() != DatabaseType.SPQR) {
+            try (Connection conn = benchmarkModule.makeConnection()) {
+                load(conn);
+            } catch (SQLException ex) {
+                SQLException next_ex = ex.getNextException();
+                String msg =
+                    String.format(
+                        "Unexpected error when loading %s database",
+                        benchmarkModule.getBenchmarkName().toUpperCase());
+                LOG.error(msg, next_ex);
+                throw new RuntimeException(ex);
+            } finally {
+                afterLoad();
+            }
+        } else {
+            try (Connection conn = benchmarkModule.makeShardConnection(shardId, false)) {
+                load(conn);
+            } catch (SQLException ex) {
+                SQLException next_ex = ex.getNextException();
+                String msg =
+                    String.format(
+                        "Unexpected error when loading %s database",
+                        benchmarkModule.getBenchmarkName().toUpperCase());
+                LOG.error(msg, next_ex);
+                throw new RuntimeException(ex);
+            } finally {
+                afterLoad();
+            }
         }
     }
 

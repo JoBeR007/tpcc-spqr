@@ -81,6 +81,26 @@
             </dependencies>
         </profile>
         <profile>
+            <id>spqr</id>
+            <activation>
+                <property>
+                    <name>env.BENCHBASE_PROFILE</name>
+                    <value>spqr</value>
+                </property>
+            </activation>
+            <properties>
+                <classifier>spqr</classifier>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>org.postgresql</groupId>
+                    <artifactId>postgresql</artifactId>
+                    <version>42.7.3</version>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>mysql</id>
             <properties>
                 <classifier>mysql</classifier>

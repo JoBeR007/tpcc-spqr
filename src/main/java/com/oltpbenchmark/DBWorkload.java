@@ -64,6 +64,8 @@ public class DBWorkload {
     private static int time = 0;
 
     private static Boolean useRealThreads = false;
+    private static boolean usePostfixNames = false;
+    private static DatabaseType databaseType;
 
     /**
      * @param args
@@ -109,6 +111,10 @@ public class DBWorkload {
             useRealThreads = true;
         }
 
+        if (argsLine.hasOption("pn")) {
+            usePostfixNames = true;
+        }
+
         // -------------------------------------------------------------------
         // GET PLUGIN LIST
         // -------------------------------------------------------------------
@@ -149,7 +155,8 @@ public class DBWorkload {
         wrkld.setXmlConfig(xmlConfig);
 
         // Pull in database configuration
-        wrkld.setDatabaseType(DatabaseType.get(xmlConfig.getString("type")));
+        databaseType = DatabaseType.get(xmlConfig.getString("type"));
+        wrkld.setDatabaseType(databaseType);
         wrkld.setDriverClass(xmlConfig.getString("driver"));
         wrkld.setUrl(xmlConfig.getString("url"));
         wrkld.setUsername(xmlConfig.getString("username"));
@@ -159,8 +166,21 @@ public class DBWorkload {
         wrkld.setMaxRetries(xmlConfig.getInt("retries", 3));
         wrkld.setMaxConnections(xmlConfig.getInt("maxConnections", wrkld.getMaxConnections()));
         wrkld.setNewConnectionPerTxn(xmlConfig.getBoolean("newConnectionPerTxn", false));
-        wrkld.setDisableConnectionPool(xmlConfig.getBoolean("disableConnectionPool", false));
-
+        wrkld.setPreferQueryMode(xmlConfig.getString("preferQueryMode"));
+        wrkld.setShardUrls(Arrays.asList(xmlConfig.getStringArray("shardUrls/shardUrl")));
+        String[] upperLimitsStr = xmlConfig.getStringArray("upperLimits/upperLimit");
+        List<Integer> upperLimits =
+            Arrays.stream(upperLimitsStr)
+                .map(
+                    string -> {
+                        try {
+                            return Integer.parseInt(string);
+                        } catch (NumberFormatException e) {
+                            throw new NumberFormatException("Error while trying to parse upper limits");
+                        }
+                    })
+                .toList();
+        wrkld.setUpperLimitsPerShard(upperLimits);
         int terminals = xmlConfig.getInt("terminals[not(@bench)]", 0);
         terminals = xmlConfig.getInt("terminals" + pluginTest, terminals);
         wrkld.setTerminals(terminals);
@@ -176,7 +196,9 @@ public class DBWorkload {
 
         double scaleFactor = xmlConfig.getDouble("scalefactor", 1.0);
         numWarehouses = (int) scaleFactor;
-        wrkld.setScaleFactor(scaleFactor);
+        if (wrkld.getDatabaseType() == DatabaseType.SPQR && wrkld.getBenchmarkName().equals("tpcc"))
+            wrkld.setScaleFactor(upperLimits.get(upperLimits.size() - 1));
+        else wrkld.setScaleFactor(xmlConfig.getDouble("scalefactor", 1.0));
 
         wrkld.setDataDir(xmlConfig.getString("datadir", "."));
         wrkld.setDDLPath(xmlConfig.getString("ddlpath", null));
@@ -406,7 +428,9 @@ public class DBWorkload {
             LOG.debug("Skipping creating benchmark database tables");
         }
 
-        benchmark.refreshCatalog();
+        if (databaseType != DatabaseType.SPQR) {
+            benchmark.refreshCatalog();
+        }
 
         // Clear the Benchmark's Database
         if (isBooleanOptionSet(argsLine, "clear")) {
@@ -479,6 +503,11 @@ public class DBWorkload {
         options.addOption("jh", "json-histograms", true, "Export histograms to JSON file");
         options.addOption("sf", "start-from-id", true, "Start from a specific scale instance id");
         options.addOption("rt", "real-threads", false, "Use real threads");
+        options.addOption(
+            "pn",
+            "postfix-names",
+            false,
+            "Use TPC-C table names with postfix \"_orig\" in create and load phase for SPQR");
         return options;
     }
 

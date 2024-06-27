@@ -15,7 +15,6 @@
  *
  */
 
-
 package com.oltpbenchmark.benchmarks.tpcc;
 
 import com.oltpbenchmark.WorkloadConfiguration;
@@ -23,15 +22,14 @@ import com.oltpbenchmark.api.BenchmarkModule;
 import com.oltpbenchmark.api.Loader;
 import com.oltpbenchmark.api.Worker;
 import com.oltpbenchmark.benchmarks.tpcc.procedures.NewOrder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class TPCCBenchmark extends BenchmarkModule {
+public final class TPCCBenchmark extends BenchmarkModule {
     private static final Logger LOG = LoggerFactory.getLogger(TPCCBenchmark.class);
 
     public TPCCBenchmark(WorkloadConfiguration workConf) {
@@ -71,26 +69,46 @@ public class TPCCBenchmark extends BenchmarkModule {
             numWarehouses = 1;
         }
 
-        final int startWarehouseId = workConf.getStartFromId();
+        int numTerminals = workConf.getTerminals();
 
-        final int numTerminals = workConf.getTerminals();
+        // We distribute terminals evenly across the warehouses
+        // Eg. if there are 10 terminals across 7 warehouses, they
+        // are distributed as
+        // 1, 1, 2, 1, 2, 1, 2
+        final double terminalsPerWarehouse = (double) numTerminals / numWarehouses;
+        int workerId = 0;
 
-        final int terminalsPerWarehouse = (int) numTerminals / numWarehouses;
+        for (int w = 0; w < numWarehouses; w++) {
+            // Compute the number of terminals in *this* warehouse
+            int lowerTerminalId = (int) (w * terminalsPerWarehouse);
+            int upperTerminalId = (int) ((w + 1) * terminalsPerWarehouse);
+            // protect against double rounding errors
+            int w_id = w + 1;
+            if (w_id == numWarehouses) {
+                upperTerminalId = numTerminals;
+            }
+            int numWarehouseTerminals = upperTerminalId - lowerTerminalId;
 
-        assert (terminalsPerWarehouse == 10); // according TPC-C
+            if (LOG.isDebugEnabled()) {
+                LOG.debug(
+                    String.format(
+                        "w_id %d = %d terminals [lower=%d / upper%d]",
+                        w_id, numWarehouseTerminals, lowerTerminalId, upperTerminalId));
+            }
 
-        final int lowerDistrictId = 1;
-        final int upperDistrictId = terminalsPerWarehouse;
+            final double districtsPerTerminal =
+                TPCCConfig.configDistPerWhse / (double) numWarehouseTerminals;
+            for (int terminalId = 0; terminalId < numWarehouseTerminals; terminalId++) {
+                int lowerDistrictId = (int) (terminalId * districtsPerTerminal);
+                int upperDistrictId = (int) ((terminalId + 1) * districtsPerTerminal);
+                if (terminalId + 1 == numWarehouseTerminals) {
+                    upperDistrictId = TPCCConfig.configDistPerWhse;
+                }
+                lowerDistrictId += 1;
 
-        int terminalIndex = 0;
-        int workerId = startWarehouseId / numWarehouses * numTerminals;
-
-        for (int w = startWarehouseId - 1; w < numWarehouses + startWarehouseId - 1; w++) {
-            final int w_id = w + 1;
-
-            for (int terminalId = 0; terminalId < terminalsPerWarehouse; terminalId++) {
-                TPCCWorker terminal = new TPCCWorker(this, workerId++, w_id, lowerDistrictId, upperDistrictId, numWarehouses);
-                terminals[terminalIndex++] = terminal;
+                TPCCWorker terminal =
+                    new TPCCWorker(this, workerId++, w_id, lowerDistrictId, upperDistrictId, numWarehouses);
+                terminals[lowerTerminalId + terminalId] = terminal;
             }
         }
 

@@ -23,9 +23,6 @@ import com.oltpbenchmark.benchmarks.tpcc.TPCCUtil;
 import com.oltpbenchmark.benchmarks.tpcc.TPCCWorker;
 import com.oltpbenchmark.benchmarks.tpcc.pojo.Customer;
 import com.oltpbenchmark.benchmarks.tpcc.pojo.Oorder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -33,54 +30,72 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class OrderStatus extends TPCCProcedure {
 
     private static final Logger LOG = LoggerFactory.getLogger(OrderStatus.class);
 
-    public SQLStmt ordStatGetNewestOrdSQL = new SQLStmt(
-    """
-        SELECT O_ID, O_CARRIER_ID, O_ENTRY_D 
-          FROM  %s
-         WHERE O_W_ID = ? 
-           AND O_D_ID = ? 
-           AND O_C_ID = ? 
-         ORDER BY O_ID DESC LIMIT 1
-    """.formatted(TPCCConstants.TABLENAME_OPENORDER));
+    public SQLStmt ordStatGetNewestOrdSQL =
+        new SQLStmt(
+            """
+      SELECT O_ID, O_CARRIER_ID, O_ENTRY_D
+        FROM  %s
+       WHERE O_W_ID = ?
+         AND O_D_ID = ?
+         AND O_C_ID = ?
+       ORDER BY O_ID DESC LIMIT 1
+  """
+                .formatted(TPCCConstants.TABLENAME_OPENORDER));
 
-    public SQLStmt ordStatGetOrderLinesSQL = new SQLStmt(
-    """
-        SELECT OL_I_ID, OL_SUPPLY_W_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D 
-          FROM  %s
-         WHERE OL_O_ID = ?
-           AND OL_D_ID = ?
-           AND OL_W_ID = ?
-    """.formatted(TPCCConstants.TABLENAME_ORDERLINE));
+    public SQLStmt ordStatGetOrderLinesSQL =
+        new SQLStmt(
+            """
+      SELECT OL_I_ID, OL_SUPPLY_W_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D
+        FROM  %s
+       WHERE OL_O_ID = ?
+         AND OL_D_ID = ?
+         AND OL_W_ID = ?
+  """
+                .formatted(TPCCConstants.TABLENAME_ORDERLINE));
 
-    public SQLStmt payGetCustSQL = new SQLStmt(
-    """
-        SELECT C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, 
-               C_CITY, C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM, 
-               C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE 
-          FROM  %s
-         WHERE C_W_ID = ? 
-           AND C_D_ID = ? 
-           AND C_ID = ?
-    """.formatted(TPCCConstants.TABLENAME_CUSTOMER));
+    public SQLStmt payGetCustSQL =
+        new SQLStmt(
+            """
+      SELECT C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2,
+             C_CITY, C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM,
+             C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE
+        FROM  %s
+       WHERE C_W_ID = ?
+         AND C_D_ID = ?
+         AND C_ID = ?
+  """
+                .formatted(TPCCConstants.TABLENAME_CUSTOMER));
 
-    public SQLStmt customerByNameSQL = new SQLStmt(
-    """
-        SELECT C_FIRST, C_MIDDLE, C_ID, C_STREET_1, C_STREET_2, C_CITY, 
-               C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT, 
-               C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE 
-          FROM  %s
-         WHERE C_W_ID = ? 
-           AND C_D_ID = ? 
-           AND C_LAST = ? 
-         ORDER BY C_FIRST
-    """.formatted(TPCCConstants.TABLENAME_CUSTOMER));
+    public SQLStmt customerByNameSQL =
+        new SQLStmt(
+            """
+      SELECT C_FIRST, C_MIDDLE, C_ID, C_STREET_1, C_STREET_2, C_CITY,
+             C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT,
+             C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE
+        FROM  %s
+       WHERE C_W_ID = ?
+         AND C_D_ID = ?
+         AND C_LAST = ?
+       ORDER BY C_FIRST
+  """
+                .formatted(TPCCConstants.TABLENAME_CUSTOMER));
 
-    public void run(Connection conn, Random gen, int w_id, int numWarehouses, int terminalDistrictLowerID, int terminalDistrictUpperID, TPCCWorker w) throws SQLException {
+    public void run(
+        Connection conn,
+        Random gen,
+        int w_id,
+        int numWarehouses,
+        int terminalDistrictLowerID,
+        int terminalDistrictUpperID,
+        TPCCWorker w)
+        throws SQLException {
 
         int d_id = TPCCUtil.randomNumber(terminalDistrictLowerID, terminalDistrictUpperID, gen);
         int y = TPCCUtil.randomNumber(1, 100, gen);
@@ -97,7 +112,6 @@ public class OrderStatus extends TPCCProcedure {
             c_id = TPCCUtil.getCustomerID(gen);
         }
 
-
         Customer c;
 
         if (c_by_name) {
@@ -105,7 +119,6 @@ public class OrderStatus extends TPCCProcedure {
         } else {
             c = getCustomerById(w_id, d_id, c_id, conn);
         }
-
 
         Oorder o = getOrderDetails(conn, w_id, d_id, c);
 
@@ -157,30 +170,35 @@ public class OrderStatus extends TPCCProcedure {
             sb.append("+-----------------------------------------------------------------+\n\n");
             LOG.trace(sb.toString());
         }
-
-
     }
 
-    private Oorder getOrderDetails(Connection conn, int w_id, int d_id, Customer c) throws SQLException {
-        try (PreparedStatement ordStatGetNewestOrd = this.getPreparedStatement(conn, ordStatGetNewestOrdSQL)) {
-
+    private Oorder getOrderDetails(Connection conn, int w_id, int d_id, Customer c)
+        throws SQLException {
+        try (PreparedStatement ordStatGetNewestOrd =
+                 this.getPreparedStatement(conn, ordStatGetNewestOrdSQL)) {
 
             // find the newest order for the customer
             // retrieve the carrier & order date for the most recent order.
 
-            ordStatGetNewestOrd.setInt(1, w_id);
-            ordStatGetNewestOrd.setInt(2, d_id);
-            ordStatGetNewestOrd.setInt(3, c.c_id);
+      /*ordStatGetNewestOrd.setInt(1, w_id);
+      ordStatGetNewestOrd.setInt(2, d_id);
+      ordStatGetNewestOrd.setInt(3, c.c_id);*/
+            ordStatGetNewestOrd.setString(1, String.valueOf(w_id));
+            ordStatGetNewestOrd.setString(2, String.valueOf(d_id));
+            ordStatGetNewestOrd.setString(3, String.valueOf(c.c_id));
 
             try (ResultSet rs = ordStatGetNewestOrd.executeQuery()) {
 
                 if (!rs.next()) {
-                    String msg = String.format("No order records for CUSTOMER [C_W_ID=%d, C_D_ID=%d, C_ID=%d]", w_id, d_id, c.c_id);
+                    String msg =
+                        String.format(
+                            "No order records for CUSTOMER [C_W_ID=%d, C_D_ID=%d, C_ID=%d]",
+                            w_id, d_id, c.c_id);
 
                     throw new RuntimeException(msg);
                 }
                 Oorder o = new Oorder();
-                o.o_id=rs.getInt("O_ID");
+                o.o_id = rs.getInt("O_ID");
                 o.o_carrier_id = rs.getInt("O_CARRIER_ID");
                 o.o_entry_d = rs.getTimestamp("O_ENTRY_D");
                 return o;
@@ -188,13 +206,18 @@ public class OrderStatus extends TPCCProcedure {
         }
     }
 
-    private List<String> getOrderLines(Connection conn, int w_id, int d_id, int o_id, Customer c) throws SQLException {
+    private List<String> getOrderLines(Connection conn, int w_id, int d_id, int o_id, Customer c)
+        throws SQLException {
         List<String> orderLines = new ArrayList<>();
 
-        try (PreparedStatement ordStatGetOrderLines = this.getPreparedStatement(conn, ordStatGetOrderLinesSQL)) {
-            ordStatGetOrderLines.setInt(1, o_id);
-            ordStatGetOrderLines.setInt(2, d_id);
-            ordStatGetOrderLines.setInt(3, w_id);
+        try (PreparedStatement ordStatGetOrderLines =
+                 this.getPreparedStatement(conn, ordStatGetOrderLinesSQL)) {
+      /*ordStatGetOrderLines.setInt(1, o_id);
+      ordStatGetOrderLines.setInt(2, d_id);
+      ordStatGetOrderLines.setInt(3, w_id);*/
+            ordStatGetOrderLines.setString(1, String.valueOf(o_id));
+            ordStatGetOrderLines.setString(2, String.valueOf(d_id));
+            ordStatGetOrderLines.setString(3, String.valueOf(w_id));
 
             try (ResultSet rs = ordStatGetOrderLines.executeQuery()) {
 
@@ -219,9 +242,11 @@ public class OrderStatus extends TPCCProcedure {
                 }
             }
 
-
             if (orderLines.isEmpty()) {
-                String msg = String.format("Order record had no order line items [C_W_ID=%d, C_D_ID=%d, C_ID=%d, O_ID=%d]", w_id, d_id, c.c_id, o_id);
+                String msg =
+                    String.format(
+                        "Order record had no order line items [C_W_ID=%d, C_D_ID=%d, C_ID=%d, O_ID=%d]",
+                        w_id, d_id, c.c_id, o_id);
                 LOG.trace(msg);
             }
         }
@@ -231,18 +256,24 @@ public class OrderStatus extends TPCCProcedure {
 
     // attention duplicated code across trans... ok for now to maintain separate
     // prepared statements
-    public Customer getCustomerById(int c_w_id, int c_d_id, int c_id, Connection conn) throws SQLException {
+    public Customer getCustomerById(int c_w_id, int c_d_id, int c_id, Connection conn)
+        throws SQLException {
 
         try (PreparedStatement payGetCust = this.getPreparedStatement(conn, payGetCustSQL)) {
 
-            payGetCust.setInt(1, c_w_id);
-            payGetCust.setInt(2, c_d_id);
-            payGetCust.setInt(3, c_id);
+      /*payGetCust.setInt(1, c_w_id);
+      payGetCust.setInt(2, c_d_id);
+      payGetCust.setInt(3, c_id);*/
+            payGetCust.setString(1, String.valueOf(c_w_id));
+            payGetCust.setString(2, String.valueOf(c_d_id));
+            payGetCust.setString(3, String.valueOf(c_id));
 
             try (ResultSet rs = payGetCust.executeQuery()) {
 
                 if (!rs.next()) {
-                    String msg = String.format("Failed to get CUSTOMER [C_W_ID=%d, C_D_ID=%d, C_ID=%d]", c_w_id, c_d_id, c_id);
+                    String msg =
+                        String.format(
+                            "Failed to get CUSTOMER [C_W_ID=%d, C_D_ID=%d, C_ID=%d]", c_w_id, c_d_id, c_id);
 
                     throw new RuntimeException(msg);
                 }
@@ -257,13 +288,17 @@ public class OrderStatus extends TPCCProcedure {
 
     // attention this code is repeated in other transacitons... ok for now to
     // allow for separate statements.
-    public Customer getCustomerByName(int c_w_id, int c_d_id, String c_last, Connection conn) throws SQLException {
+    public Customer getCustomerByName(int c_w_id, int c_d_id, String c_last, Connection conn)
+        throws SQLException {
         ArrayList<Customer> customers = new ArrayList<>();
 
         try (PreparedStatement customerByName = this.getPreparedStatement(conn, customerByNameSQL)) {
 
-            customerByName.setInt(1, c_w_id);
-            customerByName.setInt(2, c_d_id);
+      /*customerByName.setInt(1, c_w_id);
+      customerByName.setInt(2, c_d_id);
+      customerByName.setString(3, c_last);*/
+            customerByName.setString(1, String.valueOf(c_w_id));
+            customerByName.setString(2, String.valueOf(c_d_id));
             customerByName.setString(3, c_last);
 
             try (ResultSet rs = customerByName.executeQuery()) {
@@ -277,7 +312,9 @@ public class OrderStatus extends TPCCProcedure {
         }
 
         if (customers.size() == 0) {
-            String msg = String.format("Failed to get CUSTOMER [C_W_ID=%d, C_D_ID=%d, C_LAST=%s]", c_w_id, c_d_id, c_last);
+            String msg =
+                String.format(
+                    "Failed to get CUSTOMER [C_W_ID=%d, C_D_ID=%d, C_LAST=%s]", c_w_id, c_d_id, c_last);
 
             throw new RuntimeException(msg);
         }
@@ -290,9 +327,4 @@ public class OrderStatus extends TPCCProcedure {
         }
         return customers.get(index);
     }
-
-
 }
-
-
-

@@ -25,13 +25,11 @@ import com.oltpbenchmark.benchmarks.tpcc.TPCCWorker;
 import com.oltpbenchmark.benchmarks.tpcc.pojo.Customer;
 import com.oltpbenchmark.benchmarks.tpcc.pojo.District;
 import com.oltpbenchmark.benchmarks.tpcc.pojo.Warehouse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Random;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Payment extends TPCCProcedure {
 
@@ -41,7 +39,7 @@ public class Payment extends TPCCProcedure {
     """
         UPDATE %s
            SET W_YTD = W_YTD + ?
-         WHERE W_ID = ? 
+         WHERE W_ID = ?
     """.formatted(TPCCConstants.TABLENAME_WAREHOUSE));
 
     public SQLStmt payGetWhseSQL = new SQLStmt(
@@ -129,7 +127,15 @@ public class Payment extends TPCCProcedure {
          ORDER BY C_FIRST
     """.formatted(TPCCConstants.TABLENAME_CUSTOMER));
 
-    public void run(Connection conn, Random gen, int w_id, int numWarehouses, int terminalDistrictLowerID, int terminalDistrictUpperID, TPCCWorker worker) throws SQLException {
+    public void run(
+        Connection conn,
+        Random gen,
+        int w_id,
+        int numWarehouses,
+        int terminalDistrictLowerID,
+        int terminalDistrictUpperID,
+        TPCCWorker worker)
+        throws SQLException {
 
         int districtID = TPCCUtil.randomNumber(terminalDistrictLowerID, terminalDistrictUpperID, gen);
 
@@ -146,13 +152,16 @@ public class Payment extends TPCCProcedure {
         int x = TPCCUtil.randomNumber(1, 100, gen);
 
         int customerDistrictID = getCustomerDistrictId(gen, districtID, x);
-        int customerWarehouseID = getCustomerWarehouseID(gen, w_id, numWarehouses, x);
+        // SPQR atm does not support multishard transactions so no out of stock items
+        int customerWarehouseID = getCustomerWarehouseID(gen, w_id, numWarehouses, 50);
 
         Customer c = getCustomer(conn, gen, customerDistrictID, customerWarehouseID, paymentAmount);
 
         if (c.c_credit.equals("BC")) {
             // bad credit
-            c.c_data = getCData(conn, w_id, districtID, customerDistrictID, customerWarehouseID, paymentAmount, c);
+            c.c_data =
+                getCData(
+                    conn, w_id, districtID, customerDistrictID, customerWarehouseID, paymentAmount, c);
 
             updateBalanceCData(conn, customerDistrictID, customerWarehouseID, c);
 
@@ -160,14 +169,23 @@ public class Payment extends TPCCProcedure {
             // GoodCredit
 
             updateBalance(conn, customerDistrictID, customerWarehouseID, c);
-
         }
 
-        insertHistory(conn, w_id, districtID, customerDistrictID, customerWarehouseID, paymentAmount, w.w_name, d.d_name, c);
+        insertHistory(
+            conn,
+            w_id,
+            districtID,
+            customerDistrictID,
+            customerWarehouseID,
+            paymentAmount,
+            w.w_name,
+            d.d_name,
+            c);
 
         if (LOG.isTraceEnabled()) {
             StringBuilder terminalMessage = new StringBuilder();
-            terminalMessage.append("\n+---------------------------- PAYMENT ----------------------------+");
+            terminalMessage.append(
+                "\n+---------------------------- PAYMENT ----------------------------+");
             terminalMessage.append("\n Date: ").append(TPCCUtil.getCurrentTime());
             terminalMessage.append("\n\n Warehouse: ");
             terminalMessage.append(w_id);
@@ -234,18 +252,19 @@ public class Payment extends TPCCProcedure {
                     terminalMessage.append("\n\n Cust-Data: ").append(c.c_data.substring(0, 50));
                     int data_chunks = c.c_data.length() > 200 ? 4 : c.c_data.length() / 50;
                     for (int n = 1; n < data_chunks; n++) {
-                        terminalMessage.append("\n            ").append(c.c_data.substring(n * 50, (n + 1) * 50));
+                        terminalMessage
+                            .append("\n            ")
+                            .append(c.c_data.substring(n * 50, (n + 1) * 50));
                     }
                 } else {
                     terminalMessage.append("\n\n Cust-Data: ").append(c.c_data);
                 }
             }
-            terminalMessage.append("\n+-----------------------------------------------------------------+\n\n");
+            terminalMessage.append(
+                "\n+-----------------------------------------------------------------+\n\n");
 
             LOG.trace(terminalMessage.toString());
-
         }
-
     }
 
     private int getCustomerWarehouseID(Random gen, int w_id, int numWarehouses, int x) {
@@ -255,8 +274,7 @@ public class Payment extends TPCCProcedure {
         } else {
             do {
                 customerWarehouseID = TPCCUtil.randomNumber(1, numWarehouses, gen);
-            }
-            while (customerWarehouseID == w_id && numWarehouses > 1);
+            } while (customerWarehouseID == w_id && numWarehouses > 1);
         }
         return customerWarehouseID;
     }
@@ -267,14 +285,14 @@ public class Payment extends TPCCProcedure {
         } else {
             return TPCCUtil.randomNumber(1, TPCCConfig.configDistPerWhse, gen);
         }
-
-
     }
 
     private void updateWarehouse(Connection conn, int w_id, float paymentAmount) throws SQLException {
         try (PreparedStatement payUpdateWhse = this.getPreparedStatement(conn, payUpdateWhseSQL)) {
-            payUpdateWhse.setBigDecimal(1, BigDecimal.valueOf(paymentAmount));
-            payUpdateWhse.setInt(2, w_id);
+      /*payUpdateWhse.setBigDecimal(1, BigDecimal.valueOf(paymentAmount));
+      payUpdateWhse.setInt(2, w_id);*/
+            payUpdateWhse.setString(1, String.valueOf(paymentAmount));
+            payUpdateWhse.setString(2, String.valueOf(w_id));
             // MySQL reports deadlocks due to lock upgrades:
             // t1: read w_id = x; t2: update w_id = x; t1 update w_id = x
             int result = payUpdateWhse.executeUpdate();
@@ -286,7 +304,8 @@ public class Payment extends TPCCProcedure {
 
     private Warehouse getWarehouse(Connection conn, int w_id) throws SQLException {
         try (PreparedStatement payGetWhse = this.getPreparedStatement(conn, payGetWhseSQL)) {
-            payGetWhse.setInt(1, w_id);
+            // payGetWhse.setInt(1, w_id);
+            payGetWhse.setString(1, String.valueOf(w_id));
 
             try (ResultSet rs = payGetWhse.executeQuery()) {
                 if (!rs.next()) {
@@ -306,17 +325,30 @@ public class Payment extends TPCCProcedure {
         }
     }
 
-    private Customer getCustomer(Connection conn, Random gen, int customerDistrictID, int customerWarehouseID, float paymentAmount) throws SQLException {
+    private Customer getCustomer(
+        Connection conn,
+        Random gen,
+        int customerDistrictID,
+        int customerWarehouseID,
+        float paymentAmount)
+        throws SQLException {
         int y = TPCCUtil.randomNumber(1, 100, gen);
 
         Customer c;
 
         if (y <= 60) {
             // 60% lookups by last name
-            c = getCustomerByName(customerWarehouseID, customerDistrictID, TPCCUtil.getNonUniformRandomLastNameForRun(gen), conn);
+            c =
+                getCustomerByName(
+                    customerWarehouseID,
+                    customerDistrictID,
+                    TPCCUtil.getNonUniformRandomLastNameForRun(gen),
+                    conn);
         } else {
             // 40% lookups by customer ID
-            c = getCustomerById(customerWarehouseID, customerDistrictID, TPCCUtil.getCustomerID(gen), conn);
+            c =
+                getCustomerById(
+                    customerWarehouseID, customerDistrictID, TPCCUtil.getCustomerID(gen), conn);
         }
 
         c.c_balance -= paymentAmount;
@@ -326,11 +358,15 @@ public class Payment extends TPCCProcedure {
         return c;
     }
 
-    private void updateDistrict(Connection conn, int w_id, int districtID, float paymentAmount) throws SQLException {
+    private void updateDistrict(Connection conn, int w_id, int districtID, float paymentAmount)
+        throws SQLException {
         try (PreparedStatement payUpdateDist = this.getPreparedStatement(conn, payUpdateDistSQL)) {
-            payUpdateDist.setBigDecimal(1, BigDecimal.valueOf(paymentAmount));
-            payUpdateDist.setInt(2, w_id);
-            payUpdateDist.setInt(3, districtID);
+      /*payUpdateDist.setBigDecimal(1, BigDecimal.valueOf(paymentAmount));
+      payUpdateDist.setInt(2, w_id);
+      payUpdateDist.setInt(3, districtID);*/
+            payUpdateDist.setString(1, String.valueOf(paymentAmount));
+            payUpdateDist.setString(2, String.valueOf(w_id));
+            payUpdateDist.setString(3, String.valueOf(districtID));
 
             int result = payUpdateDist.executeUpdate();
 
@@ -342,9 +378,10 @@ public class Payment extends TPCCProcedure {
 
     private District getDistrict(Connection conn, int w_id, int districtID) throws SQLException {
         try (PreparedStatement payGetDist = this.getPreparedStatement(conn, payGetDistSQL)) {
-            payGetDist.setInt(1, w_id);
-            payGetDist.setInt(2, districtID);
-
+      /*payGetDist.setInt(1, w_id);
+      payGetDist.setInt(2, districtID);*/
+            payGetDist.setString(1, String.valueOf(w_id));
+            payGetDist.setString(2, String.valueOf(districtID));
             try (ResultSet rs = payGetDist.executeQuery()) {
                 if (!rs.next()) {
                     throw new RuntimeException("D_ID=" + districtID + " D_W_ID=" + w_id + " not found!");
@@ -363,67 +400,139 @@ public class Payment extends TPCCProcedure {
         }
     }
 
-    private String getCData(Connection conn, int w_id, int districtID, int customerDistrictID, int customerWarehouseID, float paymentAmount, Customer c) throws SQLException {
+    private String getCData(
+        Connection conn,
+        int w_id,
+        int districtID,
+        int customerDistrictID,
+        int customerWarehouseID,
+        float paymentAmount,
+        Customer c)
+        throws SQLException {
 
         try (PreparedStatement payGetCustCdata = this.getPreparedStatement(conn, payGetCustCdataSQL)) {
             String c_data;
-            payGetCustCdata.setInt(1, customerWarehouseID);
-            payGetCustCdata.setInt(2, customerDistrictID);
-            payGetCustCdata.setInt(3, c.c_id);
+      /*payGetCustCdata.setInt(1, customerWarehouseID);
+      payGetCustCdata.setInt(2, customerDistrictID);
+      payGetCustCdata.setInt(3, c.c_id);*/
+            payGetCustCdata.setString(1, String.valueOf(customerWarehouseID));
+            payGetCustCdata.setString(2, String.valueOf(customerDistrictID));
+            payGetCustCdata.setString(3, String.valueOf(c.c_id));
             try (ResultSet rs = payGetCustCdata.executeQuery()) {
                 if (!rs.next()) {
-                    throw new RuntimeException("C_ID=" + c.c_id + " C_W_ID=" + customerWarehouseID + " C_D_ID=" + customerDistrictID + " not found!");
+                    throw new RuntimeException(
+                        "C_ID="
+                            + c.c_id
+                            + " C_W_ID="
+                            + customerWarehouseID
+                            + " C_D_ID="
+                            + customerDistrictID
+                            + " not found!");
                 }
                 c_data = rs.getString("C_DATA");
             }
 
-            c_data = c.c_id + " " + customerDistrictID + " " + customerWarehouseID + " " + districtID + " " + w_id + " " + paymentAmount + " | " + c_data;
+            c_data =
+                c.c_id
+                    + " "
+                    + customerDistrictID
+                    + " "
+                    + customerWarehouseID
+                    + " "
+                    + districtID
+                    + " "
+                    + w_id
+                    + " "
+                    + paymentAmount
+                    + " | "
+                    + c_data;
             if (c_data.length() > 500) {
                 c_data = c_data.substring(0, 500);
             }
 
             return c_data;
         }
-
     }
 
-    private void updateBalanceCData(Connection conn, int customerDistrictID, int customerWarehouseID, Customer c) throws SQLException {
-        try (PreparedStatement payUpdateCustBalCdata = this.getPreparedStatement(conn, payUpdateCustBalCdataSQL)) {
-            payUpdateCustBalCdata.setDouble(1, c.c_balance);
-            payUpdateCustBalCdata.setDouble(2, c.c_ytd_payment);
-            payUpdateCustBalCdata.setInt(3, c.c_payment_cnt);
+    private void updateBalanceCData(
+        Connection conn, int customerDistrictID, int customerWarehouseID, Customer c)
+        throws SQLException {
+        try (PreparedStatement payUpdateCustBalCdata =
+                 this.getPreparedStatement(conn, payUpdateCustBalCdataSQL)) {
+      /*payUpdateCustBalCdata.setDouble(1, c.c_balance);
+      payUpdateCustBalCdata.setDouble(2, c.c_ytd_payment);
+      payUpdateCustBalCdata.setInt(3, c.c_payment_cnt);
+      payUpdateCustBalCdata.setString(4, c.c_data);
+      payUpdateCustBalCdata.setInt(5, customerWarehouseID);
+      payUpdateCustBalCdata.setInt(6, customerDistrictID);
+      payUpdateCustBalCdata.setInt(7, c.c_id);*/
+            payUpdateCustBalCdata.setString(1, String.valueOf(c.c_balance));
+            payUpdateCustBalCdata.setString(2, String.valueOf(c.c_ytd_payment));
+            payUpdateCustBalCdata.setString(3, String.valueOf(c.c_payment_cnt));
             payUpdateCustBalCdata.setString(4, c.c_data);
-            payUpdateCustBalCdata.setInt(5, customerWarehouseID);
-            payUpdateCustBalCdata.setInt(6, customerDistrictID);
-            payUpdateCustBalCdata.setInt(7, c.c_id);
+            payUpdateCustBalCdata.setString(5, String.valueOf(customerWarehouseID));
+            payUpdateCustBalCdata.setString(6, String.valueOf(customerDistrictID));
+            payUpdateCustBalCdata.setString(7, String.valueOf(c.c_id));
 
             int result = payUpdateCustBalCdata.executeUpdate();
 
             if (result == 0) {
-                throw new RuntimeException("Error in PYMNT Txn updating Customer C_ID=" + c.c_id + " C_W_ID=" + customerWarehouseID + " C_D_ID=" + customerDistrictID);
+                throw new RuntimeException(
+                    "Error in PYMNT Txn updating Customer C_ID="
+                        + c.c_id
+                        + " C_W_ID="
+                        + customerWarehouseID
+                        + " C_D_ID="
+                        + customerDistrictID);
             }
         }
     }
 
-    private void updateBalance(Connection conn, int customerDistrictID, int customerWarehouseID, Customer c) throws SQLException {
+    private void updateBalance(
+        Connection conn, int customerDistrictID, int customerWarehouseID, Customer c)
+        throws SQLException {
 
-        try (PreparedStatement payUpdateCustBal = this.getPreparedStatement(conn, payUpdateCustBalSQL)) {
-            payUpdateCustBal.setDouble(1, c.c_balance);
-            payUpdateCustBal.setDouble(2, c.c_ytd_payment);
-            payUpdateCustBal.setInt(3, c.c_payment_cnt);
-            payUpdateCustBal.setInt(4, customerWarehouseID);
-            payUpdateCustBal.setInt(5, customerDistrictID);
-            payUpdateCustBal.setInt(6, c.c_id);
+        try (PreparedStatement payUpdateCustBal =
+                 this.getPreparedStatement(conn, payUpdateCustBalSQL)) {
+      /*payUpdateCustBal.setDouble(1, c.c_balance);
+      payUpdateCustBal.setDouble(2, c.c_ytd_payment);
+      payUpdateCustBal.setInt(3, c.c_payment_cnt);
+      payUpdateCustBal.setInt(4, customerWarehouseID);
+      payUpdateCustBal.setInt(5, customerDistrictID);
+      payUpdateCustBal.setInt(6, c.c_id);*/
+            payUpdateCustBal.setString(1, String.valueOf(c.c_balance));
+            payUpdateCustBal.setString(2, String.valueOf(c.c_ytd_payment));
+            payUpdateCustBal.setString(3, String.valueOf(c.c_payment_cnt));
+            payUpdateCustBal.setString(4, String.valueOf(customerWarehouseID));
+            payUpdateCustBal.setString(5, String.valueOf(customerDistrictID));
+            payUpdateCustBal.setString(6, String.valueOf(c.c_id));
 
             int result = payUpdateCustBal.executeUpdate();
 
             if (result == 0) {
-                throw new RuntimeException("C_ID=" + c.c_id + " C_W_ID=" + customerWarehouseID + " C_D_ID=" + customerDistrictID + " not found!");
+                throw new RuntimeException(
+                    "C_ID="
+                        + c.c_id
+                        + " C_W_ID="
+                        + customerWarehouseID
+                        + " C_D_ID="
+                        + customerDistrictID
+                        + " not found!");
             }
         }
     }
 
-    private void insertHistory(Connection conn, int w_id, int districtID, int customerDistrictID, int customerWarehouseID, float paymentAmount, String w_name, String d_name, Customer c) throws SQLException {
+    private void insertHistory(
+        Connection conn,
+        int w_id,
+        int districtID,
+        int customerDistrictID,
+        int customerWarehouseID,
+        float paymentAmount,
+        String w_name,
+        String d_name,
+        Customer c)
+        throws SQLException {
         if (w_name.length() > 10) {
             w_name = w_name.substring(0, 10);
         }
@@ -433,13 +542,21 @@ public class Payment extends TPCCProcedure {
         String h_data = w_name + "    " + d_name;
 
         try (PreparedStatement payInsertHist = this.getPreparedStatement(conn, payInsertHistSQL)) {
-            payInsertHist.setInt(1, customerDistrictID);
-            payInsertHist.setInt(2, customerWarehouseID);
-            payInsertHist.setInt(3, c.c_id);
-            payInsertHist.setInt(4, districtID);
-            payInsertHist.setInt(5, w_id);
-            payInsertHist.setTimestamp(6, new Timestamp(System.currentTimeMillis()));
-            payInsertHist.setDouble(7, paymentAmount);
+      /*payInsertHist.setInt(1, customerDistrictID);
+      payInsertHist.setInt(2, customerWarehouseID);
+      payInsertHist.setInt(3, c.c_id);
+      payInsertHist.setInt(4, districtID);
+      payInsertHist.setInt(5, w_id);
+      payInsertHist.setTimestamp(6, new Timestamp(System.currentTimeMillis()));
+      payInsertHist.setDouble(7, paymentAmount);
+      payInsertHist.setString(8, h_data);*/
+            payInsertHist.setString(1, String.valueOf(customerDistrictID));
+            payInsertHist.setString(2, String.valueOf(customerWarehouseID));
+            payInsertHist.setString(3, String.valueOf(c.c_id));
+            payInsertHist.setString(4, String.valueOf(districtID));
+            payInsertHist.setString(5, String.valueOf(w_id));
+            payInsertHist.setString(6, String.valueOf(new Timestamp(System.currentTimeMillis())));
+            payInsertHist.setString(7, String.valueOf(paymentAmount));
             payInsertHist.setString(8, h_data);
             payInsertHist.executeUpdate();
         }
@@ -447,17 +564,22 @@ public class Payment extends TPCCProcedure {
 
     // attention duplicated code across trans... ok for now to maintain separate
     // prepared statements
-    public Customer getCustomerById(int c_w_id, int c_d_id, int c_id, Connection conn) throws SQLException {
+    public Customer getCustomerById(int c_w_id, int c_d_id, int c_id, Connection conn)
+        throws SQLException {
 
         try (PreparedStatement payGetCust = this.getPreparedStatement(conn, payGetCustSQL)) {
 
-            payGetCust.setInt(1, c_w_id);
-            payGetCust.setInt(2, c_d_id);
-            payGetCust.setInt(3, c_id);
+      /*payGetCust.setInt(1, c_w_id);
+      payGetCust.setInt(2, c_d_id);
+      payGetCust.setInt(3, c_id);*/
+            payGetCust.setString(1, String.valueOf(c_w_id));
+            payGetCust.setString(2, String.valueOf(c_d_id));
+            payGetCust.setString(3, String.valueOf(c_id));
 
             try (ResultSet rs = payGetCust.executeQuery()) {
                 if (!rs.next()) {
-                    throw new RuntimeException("C_ID=" + c_id + " C_D_ID=" + c_d_id + " C_W_ID=" + c_w_id + " not found!");
+                    throw new RuntimeException(
+                        "C_ID=" + c_id + " C_D_ID=" + c_d_id + " C_W_ID=" + c_w_id + " not found!");
                 }
 
                 Customer c = TPCCUtil.newCustomerFromResults(rs);
@@ -470,13 +592,17 @@ public class Payment extends TPCCProcedure {
 
     // attention this code is repeated in other transacitons... ok for now to
     // allow for separate statements.
-    public Customer getCustomerByName(int c_w_id, int c_d_id, String customerLastName, Connection conn) throws SQLException {
+    public Customer getCustomerByName(
+        int c_w_id, int c_d_id, String customerLastName, Connection conn) throws SQLException {
         ArrayList<Customer> customers = new ArrayList<>();
 
         try (PreparedStatement customerByName = this.getPreparedStatement(conn, customerByNameSQL)) {
 
-            customerByName.setInt(1, c_w_id);
-            customerByName.setInt(2, c_d_id);
+      /*customerByName.setInt(1, c_w_id);
+      customerByName.setInt(2, c_d_id);
+      customerByName.setString(3, customerLastName);*/
+            customerByName.setString(1, String.valueOf(c_w_id));
+            customerByName.setString(2, String.valueOf(c_d_id));
             customerByName.setString(3, customerLastName);
             try (ResultSet rs = customerByName.executeQuery()) {
                 if (LOG.isTraceEnabled()) {
@@ -493,7 +619,8 @@ public class Payment extends TPCCProcedure {
         }
 
         if (customers.size() == 0) {
-            throw new RuntimeException("C_LAST=" + customerLastName + " C_D_ID=" + c_d_id + " C_W_ID=" + c_w_id + " not found!");
+            throw new RuntimeException(
+                "C_LAST=" + customerLastName + " C_D_ID=" + c_d_id + " C_W_ID=" + c_w_id + " not found!");
         }
 
         // TPC-C 2.5.2.2: Position n / 2 rounded up to the next integer, but
@@ -505,6 +632,4 @@ public class Payment extends TPCCProcedure {
         }
         return customers.get(index);
     }
-
-
 }
